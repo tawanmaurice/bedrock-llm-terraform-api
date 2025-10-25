@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Bedrock LLM Console</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 900px; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; margin: 24px; max-width: 900px; }
     h1 { margin: 0 0 8px; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 12px 0; }
     label { font-weight: 600; }
@@ -17,6 +17,10 @@
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
     pre { white-space: pre-wrap; word-break: break-word; background: #fafafa; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
     small { color: #555; }
+    progress { width: 100%; height: 12px; }
+    .muted { color:#666; }
+    .ok { color:#0a7a2f; }
+    .err { color:#a01818; }
   </style>
 </head>
 <body>
@@ -50,12 +54,16 @@
       <button id="askBtn" class="btn">Ask</button>
     </div>
 
-    <!-- Add below the Ask button: File upload to S3 via /presign -->
+    <!-- SAME-PAGE FILE UPLOAD (presign + direct S3 PUT) -->
     <div style="margin-top:18px; border-top:1px dashed #ddd; padding-top:12px;">
-      <label><strong>Upload a file to S3</strong></label><br/>
+      <label><strong>Attach a file</strong> (uploads to S3)</label><br/>
       <input id="fileInput" type="file" />
       <button id="uploadBtn" class="btn" style="margin-left:8px;">Upload</button>
-      <span id="uploadStatus" style="margin-left:8px; color:#555;"></span>
+      <span id="uploadStatus" class="muted" style="margin-left:8px;">Idle</span>
+      <div style="margin-top:10px;">
+        <progress id="uploadBar" max="100" value="0"></progress>
+        <div id="uploadWhere" class="muted" style="margin-top:6px;">—</div>
+      </div>
     </div>
   </div>
 
@@ -88,6 +96,8 @@
     const fileInput = document.getElementById('fileInput');
     const uploadBtn = document.getElementById('uploadBtn');
     const uploadStatus = document.getElementById('uploadStatus');
+    const uploadBar = document.getElementById('uploadBar');
+    const uploadWhere = document.getElementById('uploadWhere');
 
     // Load saved API URL
     const saved = localStorage.getItem('api_url');
@@ -125,7 +135,6 @@
 
         const data = await res.json();
         rawEl.textContent = JSON.stringify(data, null, 2);
-
         if (!res.ok) { answerEl.textContent = data?.error || 'Error'; return; }
 
         modelEl.textContent = data?.model ?? 'unknown';
@@ -139,29 +148,30 @@
       }
     };
 
-    // Upload to S3 via /presign
+    // Upload to S3 via /presign on the SAME PAGE
     uploadBtn.onclick = async () => {
       const base = apiUrlEl.value.trim();
       if (!base) { alert('Please enter your API URL and click Save.'); return; }
-      if (!fileInput.files.length) { alert('Choose a file first.'); return; }
-
       const file = fileInput.files[0];
-      const presignUrl = base.replace(/\/+$/, '') + '/presign';
+      if (!file) { alert('Choose a file first.'); return; }
 
+      // Single PUT presign supports up to 5 GB; guard in browser
+      const FIVE_GB = 5 * 1024 * 1024 * 1024;
+      if (file.size > FIVE_GB) { alert('File > 5 GB. Use multipart upload.'); return; }
+
+      const presignUrl = base.replace(/\/+$/, '') + '/presign';
       uploadBtn.disabled = true;
       uploadStatus.textContent = 'Requesting URL…';
+      uploadBar.value = 0;
+      uploadWhere.textContent = '—';
 
       try {
         // 1) get presigned PUT URL
         const presignRes = await fetch(presignUrl, {
           method: 'POST',
           headers: {'content-type': 'application/json'},
-          body: JSON.stringify({
-            filename: file.name,
-            content_type: file.type || 'application/octet-stream'
-          })
+          body: JSON.stringify({ filename: file.name, content_type: file.type || 'application/octet-stream' })
         });
-
         const presignData = await presignRes.json();
         if (!presignRes.ok || !presignData.put_url) {
           throw new Error(presignData?.error || 'Failed to presign');
@@ -169,17 +179,26 @@
 
         uploadStatus.textContent = 'Uploading…';
 
-        // 2) upload direct to S3
-        const putRes = await fetch(presignData.put_url, {
-          method: 'PUT',
-          headers: { 'content-type': file.type || 'application/octet-stream' },
-          body: file
+        // 2) upload with XHR so we can show progress
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', presignData.put_url, true);
+          xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) uploadBar.value = Math.round((e.loaded / e.total) * 100);
+          };
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('Upload failed: ' + xhr.status));
+          xhr.onerror = () => reject(new Error('Network error during upload'));
+          xhr.send(file);
         });
 
-        if (!putRes.ok) throw new Error('Upload failed: ' + putRes.status);
-        uploadStatus.textContent = `Uploaded ✓  (${presignData.bucket}/${presignData.key})`;
+        uploadStatus.textContent = 'Done';
+        uploadWhere.textContent = `${presignData.bucket}/${presignData.key}`;
+        uploadWhere.className = 'muted';
       } catch (e) {
-        uploadStatus.textContent = 'Error: ' + e.message;
+        uploadStatus.textContent = 'Error';
+        uploadWhere.textContent = e.message;
+        uploadWhere.className = 'err';
       } finally {
         uploadBtn.disabled = false;
       }
