@@ -1,0 +1,11 @@
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+crash.log
+*.tfvars*
+lambda.zip
+lambda_src/__pycache__/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

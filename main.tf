@@ -49,13 +49,13 @@ provider "aws" {
 # IAM for Lambda
 # ----------------------
 resource "aws_iam_role" "lambda_role" {
-  name               = "${var.project_name}-lambda-role"
+  name = "${var.project_name}-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect = "Allow"
+      Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
-      Action   = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -70,12 +70,12 @@ resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
 resource "aws_iam_policy" "bedrock_invoke_policy" {
   name        = "${var.project_name}-bedrock-invoke"
   description = "Allow Lambda to invoke Bedrock models"
-  policy      = jsonencode({
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow",
-        Action   = [
+        Effect = "Allow",
+        Action = [
           "bedrock:InvokeModel",
           "bedrock:InvokeModelWithResponseStream"
         ],
