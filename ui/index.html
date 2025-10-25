@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bedrock LLM Console</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; max-width: 900px; }
+    h1 { margin: 0 0 8px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    label { font-weight: 600; }
+    textarea { width: 100%; min-height: 140px; font-size: 15px; }
+    input[type="text"] { width: 100%; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn { padding: 10px 16px; border: 1px solid #333; border-radius: 10px; cursor: pointer; background: #fff; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #fafafa; padding: 12px; border-radius: 10px; border: 1px solid #eee; }
+    small { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Bedrock LLM Console</h1>
+  <p class="card">
+    <label for="apiUrl">API URL</label><br />
+    <input id="apiUrl" type="text" placeholder="https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com" />
+    <small>Tip: set this once—saved to your browser.</small>
+  </p>
+
+  <div class="card">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" placeholder="Ask something…">Say hello in one sentence.</textarea>
+
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label for="temperature">Temperature</label>
+        <input id="temperature" type="number" step="0.1" min="0" max="2" value="0.2" />
+      </div>
+      <div>
+        <label for="maxTokens">Max tokens</label>
+        <input id="maxTokens" type="number" min="1" max="4096" value="256" />
+      </div>
+    </div>
+
+    <div style="margin-top:14px;">
+      <button id="askBtn" class="btn">Ask</button>
+      <button id="saveBtn" class="btn" style="margin-left:8px;">Save API URL</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div><strong>Model:</strong> <span id="model">—</span></div>
+    <div style="margin:8px 0;"><strong>Answer</strong></div>
+    <pre id="answer">—</pre>
+    <div style="margin-top:8px;">
+      <strong>Usage:</strong> <span id="usage">—</span>
+    </div>
+    <details style="margin-top:8px;">
+      <summary>Raw response</summary>
+      <pre id="raw">—</pre>
+    </details>
+  </div>
+
+  <script>
+    const apiUrlEl = document.getElementById('apiUrl');
+    const promptEl = document.getElementById('prompt');
+    const temperatureEl = document.getElementById('temperature');
+    const maxTokensEl = document.getElementById('maxTokens');
+    const askBtn = document.getElementById('askBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const modelEl = document.getElementById('model');
+    const answerEl = document.getElementById('answer');
+    const usageEl = document.getElementById('usage');
+    const rawEl = document.getElementById('raw');
+
+    // Load saved API URL from localStorage
+    const saved = localStorage.getItem('api_url');
+    if (saved) apiUrlEl.value = saved;
+
+    saveBtn.onclick = () => {
+      localStorage.setItem('api_url', apiUrlEl.value.trim());
+      saveBtn.textContent = 'Saved ✓';
+      setTimeout(() => (saveBtn.textContent = 'Save API URL'), 1200);
+    };
+
+    askBtn.onclick = async () => {
+      const base = apiUrlEl.value.trim();
+      if (!base) {
+        alert('Please enter your API URL and click Save.');
+        return;
+      }
+      const url = base.replace(/\/+$/, '') + '/invoke';
+      askBtn.disabled = true;
+      answerEl.textContent = 'Thinking…';
+      modelEl.textContent = '—';
+      usageEl.textContent = '—';
+      rawEl.textContent = '—';
+
+      try {
+        const body = {
+          prompt: promptEl.value,
+          max_tokens: Number(maxTokensEl.value || 256),
+          temperature: Number(temperatureEl.value || 0.2),
+        };
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        rawEl.textContent = JSON.stringify(data, null, 2);
+
+        if (!res.ok) {
+          answerEl.textContent = data?.error || 'Error';
+          return;
+        }
+
+        modelEl.textContent = data?.model ?? 'unknown';
+        answerEl.textContent = data?.completion ?? '(no text returned)';
+        const usage = data?.usage || {};
+        usageEl.textContent = `input_tokens=${usage.input_tokens ?? '-'}, output_tokens=${usage.output_tokens ?? '-'}`;
+      } catch (e) {
+        answerEl.textContent = 'Network or CORS error: ' + e.message;
+      } finally {
+        askBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
