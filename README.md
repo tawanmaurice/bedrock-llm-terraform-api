@@ -13,12 +13,6 @@ It includes:
 
 👉 [Bedrock LLM Console](https://tawanmaurice.github.io/bedrock-llm-terraform-api/)  
 
-> ⚠️ You must provide your **API URL** (from Terraform outputs) in the text box the first time you load the page.  
-> Example:  
-> ```
-> https://35g0q7t9p7.execute-api.us-east-1.amazonaws.com
-> ```
-
 ---
 
 ## 📦 Quick Start (Terraform)
